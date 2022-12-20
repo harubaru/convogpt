@@ -65,8 +65,9 @@ class FeedbackDataset(torch.utils.data.Dataset):
 #     "output": " I'm good, how are you?\n",
 #     "reward": 0.0
 # }
+import tqdm
 class SFTDataset(torch.utils.data.Dataset):
-    def __init__(self, sft_file: str, tokenizer: transformers.AutoTokenizer, max_length: int = 512):
+    def __init__(self, sft_file: str, tokenizer: transformers.AutoTokenizer, max_length: int = 2048):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.sft_file = sft_file
@@ -76,6 +77,13 @@ class SFTDataset(torch.utils.data.Dataset):
         
         # iterate over sft, removing any that have a reward of 0
         self.sft = [sft for sft in self.sft if sft["reward"] != 0.0]
+
+        # iterate over sft, removing any that have too many tokens
+        for feedback in tqdm.tqdm(self.sft, desc="Validating SFT"):
+            inputs = feedback["input"] + f' {feedback["output"].lstrip().rstrip()}\n'
+            if len(self.tokenizer(inputs).input_ids) > self.max_length:
+                self.sft.remove(feedback)
+                print(f"Removed {feedback['output']} due to length")
 
     def __len__(self):
         return len(self.sft)

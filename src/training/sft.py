@@ -120,20 +120,29 @@ class SFT_Trainer:
             start_positions = batch['start_positions']
             end_positions = batch['end_positions']
 
-            outputs = sft_forward(
-                self.model,
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                start_positions=start_positions,
-                end_positions=end_positions,
-            )
+            try:
+                outputs = sft_forward(
+                    self.model,
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    start_positions=start_positions,
+                    end_positions=end_positions,
+                )
 
-            loss = outputs.loss
-            self.accelerator.backward(loss)
-            if self.accelerator.sync_gradients:
-                self.accelerator.clip_grad_norm_(self.model.parameters(), 1.0)
-            self.optimizer.step()
-            self.optimizer.zero_grad()
+                loss = outputs.loss
+                self.accelerator.backward(loss)
+                if self.accelerator.sync_gradients:
+                    self.accelerator.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+            except RuntimeError as e:
+                print(f"RuntimeError: {e}")
+                print(f"input_ids: {input_ids}")
+                print(f"attention_mask: {attention_mask}")
+                print(f"start_positions: {start_positions}")
+                print(f"end_positions: {end_positions}")
+                print('Skipping batch...')
+                loss = torch.tensor(float('nan'), device=self.accelerator.device)
         
         return {
             "train/loss": loss.detach().item(),

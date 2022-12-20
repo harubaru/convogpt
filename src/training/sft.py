@@ -37,11 +37,6 @@ def sft_forward(
     sequence_output = outputs[0]
 
     logits = self.lm_head(sequence_output)
-
-    # create a loss mask where we ignore the loss for the tokens that are not in the answer
-    loss_mask = torch.zeros_like(logits[:, :, 0])
-    for i in range(len(start_positions)):
-        loss_mask[i, start_positions[i]:end_positions[i]+1] = 1
     
     answer_logits = logits[:, start_positions[0]:end_positions[0]+1]
     answer_input_ids = input_ids[:, start_positions[0]:end_positions[0]+1]

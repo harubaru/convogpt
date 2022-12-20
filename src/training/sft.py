@@ -28,7 +28,10 @@ def sft_forward(
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
 ) -> Union[torch.Tensor, CausalLMOutput]:
-    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+    try:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+    except AttributeError:
+        return_dict = True
 
     outputs = self.transformer(
         input_ids,
@@ -45,12 +48,18 @@ def sft_forward(
     sequence_output = outputs[0]
 
     logits = self.lm_head(sequence_output)
-    
+
     answer_logits = logits[:, start_positions[0]:end_positions[0]+1]
     answer_input_ids = input_ids[:, start_positions[0]:end_positions[0]+1]
+    prompt_logits = logits[:, :start_positions[0]]
+    prompt_input_ids = input_ids[:, :start_positions[0]]
 
     # compute loss for prompt and answer
-    loss = torch.nn.functional.cross_entropy(answer_logits.view(-1, answer_logits.size(-1)), answer_input_ids.view(-1), ignore_index=-1)
+    loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-1)
+    answer_loss = loss_fct(answer_logits.reshape(-1, answer_logits.size(-1)), answer_input_ids.reshape(-1))
+    prompt_loss = loss_fct(prompt_logits.reshape(-1, prompt_logits.size(-1)), prompt_input_ids.reshape(-1))
+
+    loss = (answer_loss + prompt_loss) / 2
 
     if not return_dict:
         output = (loss,) + outputs[2:]
@@ -135,6 +144,8 @@ class SFT_Trainer:
         for epoch in range(self.args.epochs):
             for _, batch in enumerate(self.train_dataloader):
                 step_start = time.perf_counter()
+
+                #print(f"####\n{self.tokenizer.decode(batch['input_ids'][0])}\n#{batch['start_positions'][0]}:{batch['end_positions'][0]}\n####")
 
                 metrics = self.step(batch)
 
@@ -231,4 +242,26 @@ def main() -> None:
     trainer.train()
 
 if __name__ == '__main__':
+    """
+    # Load model and tokenizer
+    model = AutoModelForCausalLM.from_pretrained('distilgpt2')
+    tokenizer = AutoTokenizer.from_pretrained('distilgpt2')
+
+    # Add supervised finetuning forward method to model
+    model.forward = sft_forward.__get__(model)
+
+    # Create input tensors
+    question = 'What is the capital of France?'
+    answer = 'The capital of France is Paris.'
+    question_tokens = tokenizer.encode(question, return_tensors='pt')
+    answer_tokens = tokenizer.encode(answer, return_tensors='pt')
+    input_ids = torch.cat([question_tokens, answer_tokens], dim=-1)
+    
+    start_positions = torch.tensor([len(question_tokens[0])])
+    end_positions = torch.tensor([len(question_tokens[0]) + len(answer_tokens[0]) - 1])
+
+    # Compute loss
+    loss = model(input_ids, start_positions=start_positions, end_positions=end_positions).loss
+    print(loss)
+    """
     main()

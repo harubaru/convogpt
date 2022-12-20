@@ -2,6 +2,7 @@
 __pycache__/
 *.jsonl
 wandb/
+models/
 *.py[cod]
 *$py.class
 

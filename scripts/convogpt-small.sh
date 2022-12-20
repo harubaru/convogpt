@@ -6,7 +6,7 @@ OUTPUT_DIR="models/convogpt-small"
 EPOCHS=10
 BATCH_SIZE=1
 SAVE_STEPS=1000
-LEARNING_RATE=1e-4
+LEARNING_RATE=1e-5
 
 accelerate launch src/training/sft.py \
     --model $BASE_MODEL \

@@ -51,15 +51,14 @@ def sft_forward(
 
     answer_logits = logits[:, start_positions[0]:end_positions[0]+1]
     answer_input_ids = input_ids[:, start_positions[0]:end_positions[0]+1]
-    prompt_logits = logits[:, :start_positions[0]]
-    prompt_input_ids = input_ids[:, :start_positions[0]]
 
     # compute loss for prompt and answer
     loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-1)
-    answer_loss = loss_fct(answer_logits.reshape(-1, answer_logits.size(-1)), answer_input_ids.reshape(-1))
-    prompt_loss = loss_fct(prompt_logits.reshape(-1, prompt_logits.size(-1)), prompt_input_ids.reshape(-1))
+    shift_answer_logits = answer_logits[..., :-1, :].contiguous()
+    shift_answer_labels = answer_input_ids[..., 1:].contiguous()
+    answer_loss = loss_fct(shift_answer_logits.view(-1, answer_logits.size(-1)), shift_answer_labels.view(-1))
 
-    loss = (answer_loss + prompt_loss) / 2
+    loss = answer_loss
 
     if not return_dict:
         output = (loss,) + outputs[2:]

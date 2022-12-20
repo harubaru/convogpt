@@ -107,10 +107,11 @@ class SFT_Trainer:
     
     def save_model(self) -> None:
         self.accelerator.wait_for_everyone()
-        path = f'{self.args.output_dir}/{self.run.name}'
-        os.makedirs(path, exist_ok=True)
-        model = self.accelerator.unwrap_model(self.model)
-        model.save_pretrained(path)
+        if self.accelerator.is_main_process:
+            path = f'{self.args.output_dir}/{self.run.name}'
+            os.makedirs(path, exist_ok=True)
+            unwrapped_model = self.accelerator.unwrap_model(self.model)
+            unwrapped_model.save_pretrained(path, save_function=self.accelerator.save)
 
     def step(self, batch: dict) -> None:
         with self.accelerator.accumulate(self.model):

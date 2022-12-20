@@ -83,7 +83,7 @@ class SFTDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         sft = self.sft[idx]
         sft_input_tokens = self.tokenizer(sft["input"], return_tensors="pt").input_ids
-        sft_output_tokens = self.tokenizer(f' {sft["output"].lstrip().rstrip()}', return_tensors="pt").input_ids
+        sft_output_tokens = self.tokenizer(f' {sft["output"].lstrip().rstrip()}\n', return_tensors="pt").input_ids
         input_ids = torch.cat([sft_input_tokens, sft_output_tokens], dim=-1)
         start_positions = torch.tensor([len(sft_input_tokens[0])])
         end_positions = torch.tensor([len(sft_input_tokens[0]) + len(sft_output_tokens[0]) - 1])

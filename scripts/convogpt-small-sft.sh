@@ -1,11 +1,11 @@
 #!/bin/bash
 
 BASE_MODEL="hakurei/lit-125M"
-DATASET="train.jsonl"
+DATASET="train-small.jsonl"
 OUTPUT_DIR="models/convogpt-small"
-EPOCHS=10
+EPOCHS=2
 BATCH_SIZE=1
-SAVE_STEPS=1000
+SAVE_STEPS=50
 LEARNING_RATE=1e-5
 
 accelerate launch src/training/sft.py \

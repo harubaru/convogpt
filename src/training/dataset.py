@@ -1,8 +1,11 @@
+import os
+import struct
 import torch
 import argparse
 import numpy as np
 import transformers
 import json
+from typing import Tuple
 
 def decode(in_file: str, out_file: str, tokenizer: transformers.AutoTokenizer) -> int:
     mem = np.memmap(in_file, mode="r", dtype="uint16")
@@ -22,17 +25,39 @@ def encode(in_file: str, out_file: str, tokenizer: transformers.AutoTokenizer) -
     return len(tokens)
 
 class TokenizedDataset(torch.utils.data.Dataset):
-    def __init__(self, in_file: str, chunks: int, tokenizer: transformers.AutoTokenizer):
-        self.in_file = in_file
-        self.chunks = chunks
-        self.tokenizer = tokenizer
-        self.mem = np.memmap(in_file, mode="r", dtype="uint16")
+    """
+    Consumes a flat binary file containing 16-bit token serialization, aligned
+    along `context_length` chunks.
+    """
 
-    def __len__(self):
-        return len(self.mem) // self.chunks
-    
-    def __getitem__(self, idx):
-        return torch.tensor(self.mem[idx*self.chunks:(idx+1)*self.chunks])
+    def __init__(self, path: str, context_length: int = 2048):
+        file_stat = os.stat(path)
+        self.file = open(path, 'rb')
+        self.length = int(file_stat.st_size / 2 / context_length)
+        self.formatstr = '%sH' % context_length
+        self.context_length = context_length
+        length_mb = os.stat(path).st_size / 1024.0 / 1024.0
+        num_tokens = self.length * context_length
+        print(f"DATASET: {path}")
+        print(f"DATASET SIZE: {length_mb:,.2f}mb, {num_tokens:,} tokens, "
+              f"{self.length:,} contexts")
+
+    def __len__(self) -> int:
+        return self.length
+
+    def load(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        self.seek(idx)
+        input_ids = torch.tensor(
+            struct.unpack(self.formatstr,
+                          self.file.read(self.context_length * 2)))
+        mask = torch.zeros(self.context_length)
+        return input_ids, mask
+
+    def seek(self, idx):
+        self.file.seek(self.context_length * idx * 2)
+
+    def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.load(idx)
 
 class FeedbackDataset(torch.utils.data.Dataset):
     def __init__(self, feedback_file: str, tokenizer: transformers.AutoTokenizer, max_length: int = 512):

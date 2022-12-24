@@ -5,6 +5,7 @@ This repo contains pretrained models and tools that are to be used for modelling
 | Model ID   | Parameter Count | Training Method |
 |------------|-----------------|-----------------|
 | [convogpt-125m-uft](https://huggingface.co/hakurei/convogpt/tree/main/125m-uft) | 125 Million | Unsupervised Finetuning |
+| [convogpt-1.3b-uft](https://huggingface.co/hakurei/convogpt/tree/main/1.3b-uft) | 1.3 Billion | Unsupervised Finetuning |
 
 ## 🔑 Setup
 

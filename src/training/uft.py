@@ -123,7 +123,7 @@ class UFT_Trainer:
 
 def main() -> None:
 
-    parser = argparse.ArgumentParser(description="Supervised GPT finetuning")
+    parser = argparse.ArgumentParser(description="Unsupervised GPT finetuning")
     parser.add_argument("--model", type=str, default="hakurei/gpt-j-random-tinier", help="Model name")
     parser.add_argument("--dataset", type=str, default="train.jsonl", help="Training file")
     parser.add_argument("--output_dir", type=str, default="output", help="Output directory")

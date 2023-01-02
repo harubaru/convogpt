@@ -3,6 +3,8 @@ __pycache__/
 *.jsonl
 wandb/
 models/
+output/
+*.bat
 *.py[cod]
 *$py.class
 

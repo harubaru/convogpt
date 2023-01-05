@@ -5,24 +5,22 @@ import argparse
 import numpy as np
 import transformers
 import json
+import tqdm
 from typing import Tuple
 
 def decode(in_file: str, out_file: str, tokenizer: transformers.AutoTokenizer) -> int:
     mem = np.memmap(in_file, mode="r", dtype="uint16")
     tokens = len(mem)
     with open(out_file, "a") as f:
-        for token in mem:
+        for token in tqdm.tqdm(mem):
             f.write(tokenizer.decode([token]))
     return tokens
 
-def encode(in_file: str, out_file: str, tokenizer: transformers.AutoTokenizer) -> int:
-    with open(in_file, "r", encoding="utf-8") as f:
-        text = f.read()
-    tokens = tokenizer.encode(text)
-    with open(out_file, "wb") as f:
-        for token in tokens:
-            f.write(np.uint16(token))
-    return len(tokens)
+def encode(in_file: str, out_file: str, tokenizer: transformers.AutoTokenizer) -> None:
+    with open(out_file, "ab") as w:
+        with open(in_file, "r", encoding="utf-8") as f:
+            for line in tqdm.tqdm(f):
+                w.write(np.uint16(tokenizer.encode(line)))
 
 class TokenizedDataset(torch.utils.data.Dataset):
     """

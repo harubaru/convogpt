@@ -50,7 +50,6 @@ class RM_Trainer:
             self.global_step = 0
         
     def save_model(self) -> None:
-        self.accelerator.wait_for_everyone()
         path = f'{self.args.output_dir}'
         os.makedirs(path, exist_ok=True)
         unwrapped_model = self.accelerator.unwrap_model(self.model)
@@ -133,6 +132,7 @@ class RM_Trainer:
                     if self.global_step % self.args.eval_steps == 0:
                         eval_metrics = self.evaluate()
                         self.run.log(eval_metrics, step=self.global_step)
+        self.accelerator.wait_for_everyone()
         self.save_model()
 
 def main():

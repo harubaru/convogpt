@@ -47,7 +47,6 @@ class UFT_Trainer:
             self.global_step = 0
     
     def save_model(self) -> None:
-        self.accelerator.wait_for_everyone()
         path = f'{self.args.output_dir}/{self.run.name}'
         os.makedirs(path, exist_ok=True)
         unwrapped_model = self.accelerator.unwrap_model(self.model)
@@ -117,6 +116,7 @@ class UFT_Trainer:
 
                     if self.global_step % self.args.save_steps == 0:
                         self.save_model()
+        self.accelerator.wait_for_everyone()
         self.save_model()
 
 

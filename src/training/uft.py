@@ -153,7 +153,16 @@ def main() -> None:
     )
 
     model = AutoModelForCausalLM.from_pretrained(args.model)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    
+    optim_cls = torch.optim.AdamW
+    try:
+        import bitsandbytes as bnb
+        optim_cls = bnb.optim.AdamW8bit
+    except ImportError:
+        pass
+
+    optimizer = optim_cls(model.parameters(), lr=args.learning_rate)
+
     lr_scheduler = get_scheduler(
         name=args.learning_rate_schedule,
         optimizer=optimizer,

@@ -189,7 +189,16 @@ def main():
 
     model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=1)
     model.config.pad_token_id = tokenizer.eos_token_id
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    
+    optim_cls = torch.optim.AdamW
+    try:
+        import bitsandbytes as bnb
+        optim_cls = bnb.optim.AdamW8bit
+    except ImportError:
+        pass
+
+    optimizer = optim_cls(model.parameters(), lr=args.learning_rate)
+
     lr_scheduler = get_scheduler(
         name=args.learning_rate_schedule,
         optimizer=optimizer,

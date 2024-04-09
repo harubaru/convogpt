@@ -6,87 +6,24 @@ import time
 import argparse
 import wandb
 
-from dataset import TokenizedDataset, FeedbackDataset, SFTDataset
+from dataset import TokenizedDataset, FeedbackDataset, SFTDataset, ChatMLDataset
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutput
 
 from typing import Union, Optional
 
-# Supervised Finetuning: Compute loss between model output and target using start_positions and end_positions
-def sft_forward(
-    self,
-    input_ids: Optional[torch.LongTensor] = None,
-    attention_mask: Optional[torch.FloatTensor] = None,
-    token_type_ids: Optional[torch.LongTensor] = None,
-    position_ids: Optional[torch.LongTensor] = None,
-    head_mask: Optional[torch.FloatTensor] = None,
-    inputs_embeds: Optional[torch.FloatTensor] = None,
-    start_positions: Optional[torch.LongTensor] = None,
-    end_positions: Optional[torch.LongTensor] = None,
-    output_attentions: Optional[bool] = None,
-    output_hidden_states: Optional[bool] = None,
-    return_dict: Optional[bool] = None,
-) -> Union[torch.Tensor, CausalLMOutput]:
-    try:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-    except AttributeError:
-        return_dict = True
-
-    outputs = self.transformer(
-        input_ids,
-        attention_mask=attention_mask,
-        token_type_ids=token_type_ids,
-        position_ids=position_ids,
-        head_mask=head_mask,
-        inputs_embeds=inputs_embeds,
-        output_attentions=output_attentions,
-        output_hidden_states=output_hidden_states,
-        return_dict=return_dict,
-    )
-
-    sequence_output = outputs[0]
-
-    logits = self.lm_head(sequence_output)
-
-    answer_logits = logits[:, start_positions[0]:end_positions[0]+1]
-    answer_input_ids = input_ids[:, start_positions[0]:end_positions[0]+1]
-
-    prompt_logits = logits[:, :start_positions[0]]
-    prompt_input_ids = input_ids[:, :start_positions[0]]
-
-    # compute loss for prompt and answer
-    loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-1)
-    shift_answer_logits = answer_logits[..., :-1, :].contiguous()
-    shift_answer_labels = answer_input_ids[..., 1:].contiguous()
-    shift_prompt_logits = prompt_logits[..., :-1, :].contiguous()
-    shift_prompt_labels = prompt_input_ids[..., 1:].contiguous()
-    answer_loss = loss_fct(shift_answer_logits.view(-1, answer_logits.size(-1)), shift_answer_labels.view(-1))
-    prompt_loss = loss_fct(shift_prompt_logits.view(-1, prompt_logits.size(-1)), shift_prompt_labels.view(-1))
-
-    loss = (prompt_loss + answer_loss) / 2
-
-    if not return_dict:
-        output = (loss,) + outputs[2:]
-        return ((loss,) + outputs[2:]) if return_dict else output
-
-    return CausalLMOutput(
-        loss=loss,
-        logits=logits,
-        hidden_states=outputs.hidden_states,
-        attentions=outputs.attentions,
-    )
 
 class SFT_Trainer:
     def __init__(
-        self,
-        accelerator: accelerate.Accelerator,
-        model: AutoModelForCausalLM,
-        tokenizer: AutoTokenizer,
-        train_dataloader: torch.utils.data.DataLoader,
-        optimizer: torch.optim.Optimizer,
-        weight_dtype: torch.dtype,
-        args: argparse.Namespace,
+            self,
+            accelerator: accelerate.Accelerator,
+            model: AutoModelForCausalLM,
+            tokenizer: AutoTokenizer,
+            train_dataloader: torch.utils.data.DataLoader,
+            optimizer: torch.optim.Optimizer,
+            weight_dtype: torch.dtype,
+            args: argparse.Namespace,
     ) -> None:
         self.accelerator = accelerator
         self.model = model
@@ -98,7 +35,7 @@ class SFT_Trainer:
 
         if accelerator.is_main_process:
             self.progress_bar = tqdm.tqdm(
-                total=self.args.epochs*len(train_dataloader),
+                total=self.args.epochs * len(train_dataloader),
                 desc="Total Steps",
                 leave=False,
             )
@@ -110,7 +47,7 @@ class SFT_Trainer:
             )
 
             self.global_step = 0
-    
+
     def save_model(self) -> None:
         path = f'{self.args.output_dir}/{self.run.name}'
         os.makedirs(path, exist_ok=True)
@@ -127,18 +64,14 @@ class SFT_Trainer:
         with self.accelerator.accumulate(self.model):
             input_ids = batch['input_ids']
             attention_mask = batch['attention_mask']
-            start_positions = batch['start_positions']
-            end_positions = batch['end_positions']
+            labels = batch['labels']
 
             try:
-                outputs = sft_forward(
-                    self.model,
+                outputs = self.model.forward(
                     input_ids=input_ids,
+                    labels=labels,
                     attention_mask=attention_mask,
-                    start_positions=start_positions,
-                    end_positions=end_positions,
                 )
-
                 loss = outputs.loss
                 self.accelerator.backward(loss)
                 if self.accelerator.sync_gradients:
@@ -147,24 +80,20 @@ class SFT_Trainer:
                 self.optimizer.zero_grad()
             except RuntimeError as e:
                 print(f"RuntimeError: {e}")
-                print(f"input_ids: {input_ids}")
-                print(f"attention_mask: {attention_mask}")
-                print(f"start_positions: {start_positions}")
-                print(f"end_positions: {end_positions}")
                 print('Skipping batch...')
-                loss = torch.tensor(float('nan'), device=self.accelerator.device)
-        
+                return {"train/loss": torch.nan}
+
         return {
             "train/loss": loss.detach().item(),
         }
-    
+
     def train(self) -> None:
         self.model.train()
         for epoch in range(self.args.epochs):
             for _, batch in enumerate(self.train_dataloader):
                 step_start = time.perf_counter()
 
-                #print(f"####\n{self.tokenizer.decode(batch['input_ids'][0])}\n#{batch['start_positions'][0]}:{batch['end_positions'][0]}\n####")
+                # print(f"####\n{self.tokenizer.decode(batch['input_ids'][0])}\n#{batch['start_positions'][0]}:{batch['end_positions'][0]}\n####")
 
                 metrics = self.step(batch)
 
@@ -194,45 +123,48 @@ class SFT_Trainer:
         self.accelerator.wait_for_everyone()
         self.save_model()
 
-def main() -> None:
 
+def main() -> None:
     parser = argparse.ArgumentParser(description="Supervised GPT finetuning")
-    parser.add_argument("--model", type=str, default="hakurei/gpt-j-random-tinier", help="Model name")
-    parser.add_argument("--dataset", type=str, default="train.jsonl", help="Training file")
+    parser.add_argument("--model", type=str, default="models/convobase-125m", help="Model name")
+    parser.add_argument("--dataset", type=str, default="dataset/ultrachat-1k.jsonl", help="Training file")
     parser.add_argument("--output_dir", type=str, default="output", help="Output directory")
     parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
     parser.add_argument("--save_steps", type=int, default=1000, help="Save model every x steps")
-    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--learning_rate", type=float, default=1e-5, help="Learning rate")
+    parser.add_argument("--gradient_accumulation", type=int, default=8, help="Gradient Accumulation Steps")
     args = parser.parse_args()
 
-    accelerator = accelerate.Accelerator()
+    accelerator = accelerate.Accelerator(
+        gradient_accumulation_steps=args.gradient_accumulation
+    )
     accelerate.utils.set_seed(42)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     tokenizer.pad_token = tokenizer.eos_token
 
     def collate_fn(batches):
-        input_ids = [
-            batch["input_ids"].squeeze(0) for batch in batches
-        ]
+        input_ids = [batch["input_ids"].squeeze(0) for batch in batches]
+        labels = [batch["labels"].squeeze(0) for batch in batches]
+
+        # Padding for 'input_ids' and creating 'attention_mask'
         padded_tokens = tokenizer.pad(
             {"input_ids": input_ids}, return_tensors="pt", padding=True
         )
-        start_positions = torch.stack(
-            [batch["start_positions"] for batch in batches]
-        )
-        end_positions = torch.stack(
-            [batch["end_positions"] for batch in batches]
-        )
+
+        # Padding for 'labels' - we can use the same padding index as for the 'input_ids'
+        padded_labels = tokenizer.pad(
+            {"input_ids": labels}, return_tensors="pt", padding=True
+        )["input_ids"]  # 'pad_to_multiple_of' may be required for some models like OPT
+
         return {
             "input_ids": padded_tokens["input_ids"],
             "attention_mask": padded_tokens["attention_mask"],
-            "start_positions": start_positions,
-            "end_positions": end_positions,
+            "labels": padded_labels
         }
-    
-    train_dataset = SFTDataset(args.dataset, tokenizer)
+
+    train_dataset = ChatMLDataset(args.dataset, tokenizer, 2048, "<|im_start|>", "<|im_end|>", -100)
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -249,7 +181,7 @@ def main() -> None:
     except ImportError:
         pass
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    optimizer = optim_cls(model.parameters(), lr=args.learning_rate)
 
     model, optimizer, train_dataloader = accelerator.prepare(
         model, optimizer, train_dataloader
@@ -267,6 +199,7 @@ def main() -> None:
 
     trainer.train()
 
+
 if __name__ == '__main__':
     """
     # Load model and tokenizer
@@ -282,7 +215,7 @@ if __name__ == '__main__':
     question_tokens = tokenizer.encode(question, return_tensors='pt')
     answer_tokens = tokenizer.encode(answer, return_tensors='pt')
     input_ids = torch.cat([question_tokens, answer_tokens], dim=-1)
-    
+
     start_positions = torch.tensor([len(question_tokens[0])])
     end_positions = torch.tensor([len(question_tokens[0]) + len(answer_tokens[0]) - 1])
 
